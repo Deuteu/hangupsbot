@@ -1,7 +1,6 @@
 import asyncio
 #for image
 import aiohttp
-import logging
 import os
 import io
 #for test presence in text
