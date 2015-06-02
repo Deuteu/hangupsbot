@@ -16,6 +16,8 @@ class EventHandler(object):
         self.bot_command = bot_command
 
         self.explicit_admin_commands = [] # plugins can force some commands to be admin-only via register_admin_command()
+        self.explicit_mod_commands = [] # plugins can force some commands to be mod-only via register_mod_command()
+        self.explicit_cast_commands = [] # plugins can force some commands to be cast-only via register_cast_command()
 
         self.pluggables = { "message":[], "membership":[], "rename":[], "sending":[] }
 
@@ -57,6 +59,20 @@ class EventHandler(object):
             command_names = [command_names] # wrap into a list for consistent processing
         self._plugin_register_command("user", command_names)
 
+    def register_mod_command(self, command_names):
+        """call during plugin init to register mod commands"""
+        if not isinstance(command_names, list):
+            command_names = [command_names] # wrap into a list for consistent processing
+        self._plugin_register_command("mod", command_names)
+        self.explicit_mod_commands.extend(command_names)
+
+    def register_cast_command(self, command_names):
+        """call during plugin init to register cast commands"""
+        if not isinstance(command_names, list):
+            command_names = [command_names] # wrap into a list for consistent processing
+        self._plugin_register_command("cast", command_names)
+        self.explicit_cast_commands.extend(command_names)
+
     def register_admin_command(self, command_names):
         """call during plugin init to register admin commands"""
         if not isinstance(command_names, list):
@@ -78,6 +94,22 @@ class EventHandler(object):
         """call during plugin init to register a handler for a specific bot event"""
         self.pluggables[type].append((function, priority, self._current_plugin["metadata"]))
 
+    def get_mod_commands(self, conversation_id):
+        # get list of commands that are mod-only, set in config.json OR plugin-registered
+        commands_mod_list = self.bot.get_config_suboption(conversation_id, 'commands_mod')
+        if not commands_mod_list:
+            commands_mod_list = []
+        commands_mod_list = list(set(commands_mod_list + self.explicit_mod_commands))
+        return commands_mod_list
+
+    def get_cast_commands(self, conversation_id):
+        # get list of commands that are cast-only, set in config.json OR plugin-registered
+        commands_mod_list = self.bot.get_config_option('commands_cast')
+        if not commands_mod_list:
+            commands_mod_list = []
+        commands_mod_list = list(set(commands_mod_list + self.explicit_cast_commands))
+        return commands_mod_list
+
     def get_admin_commands(self, conversation_id):
         # get list of commands that are admin-only, set in config.json OR plugin-registered
         commands_admin_list = self.bot.get_config_suboption(conversation_id, 'commands_admin')
@@ -85,6 +117,51 @@ class EventHandler(object):
             commands_admin_list = []
         commands_admin_list = list(set(commands_admin_list + self.explicit_admin_commands))
         return commands_admin_list
+
+    def check_rights(self, event, command):
+        """Check that user has the right to run this command"""
+        print("check_rights")
+
+        # Do not allow admin commands
+        commands_admin_list = self.get_admin_commands(event.conv_id)
+        is_admin_command = commands_admin_list and command in commands_admin_list
+
+        # Check if mod command and if user is mod
+        commands_mod_list = self.get_mod_commands(event.conv_id)
+        print(commands_mod_list)
+        is_mod_command = commands_mod_list and command in commands_mod_list
+        mods_list = []
+        global_mods_list = self.bot.get_config_option('mods')
+        if not global_mods_list:
+            global_mods_list = []
+        print(global_mods_list)
+        local_mods_list = self.bot.get_config_suboption(event.conv_id, 'mods')
+        if not local_mods_list:
+            local_mods_list = []
+        print(local_mods_list)
+        mods_list = list(set(mods_list + global_mods_list + local_mods_list))
+        is_mod = event.user_id.chat_id in mods_list
+
+        # Check if cast command and if user is caster
+        commands_cast_list = self.get_cast_commands(event.conv_id)
+        is_cast_command = commands_cast_list and command in commands_cast_list
+        casters_list = []
+        global_casters_list = self.bot.get_config_option('casters')
+        if not global_casters_list:
+            global_casters_list = []
+        local_casters_list = self.bot.get_config_suboption(event.conv_id, 'casters')
+        if not local_casters_list:
+            local_casters_list = []
+        casters_list = list(set(casters_list + global_casters_list + local_casters_list))
+        is_caster = event.user_id.chat_id in casters_list
+
+        print(is_mod)
+        print(is_mod_command)
+        print(is_caster)
+        print(is_cast_command)
+        r = (not is_admin_command and not is_mod_command and not is_cast_command) or (is_mod_command and is_mod) or (is_cast_command and is_caster)
+        print(r)
+        return r
 
     @asyncio.coroutine
     def handle_chat_message(self, event):
@@ -102,12 +179,14 @@ class EventHandler(object):
     @asyncio.coroutine
     def handle_command(self, event):
         """Handle command messages"""
+        print("handle_command")
 
         # verify user is an admin
         admins_list = self.bot.get_config_suboption(event.conv_id, 'admins')
         initiator_is_admin = False
         if event.user_id.chat_id in admins_list:
             initiator_is_admin = True
+        print(initiator_is_admin)
 
         # Test if command handling is enabled
         # note: admins always bypass this check
@@ -131,12 +210,14 @@ class EventHandler(object):
             self.bot.send_message(event.conv, _('{}: missing parameter(s)').format(event.user.full_name))
             return
 
-        # only admins can run admin commands
-        commands_admin_list = self.get_admin_commands(event.conv_id)
-        if commands_admin_list and line_args[1].lower() in commands_admin_list:
-            if not initiator_is_admin:
+        # Admin can execute all command
+        if not initiator_is_admin:
+            test = line_args[1].lower()
+            # Check right to run command
+            if not self.check_rights(event, test):
                 self.bot.send_message(event.conv, _('{}: Can\'t do that.').format(event.user.full_name))
                 return
+        print("handle_command end")
 
         # Run command
         yield from asyncio.sleep(0.2)
