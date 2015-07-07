@@ -33,9 +33,10 @@ class tracker:
         self._current["metadata"] = metadata
 
     def current(self):
-        self._current["commands"]["all"] = list(
-            set(self._current["commands"]["admin"] +
-                self._current["commands"]["user"]))
+        all_commands = []
+        for key in self._current["commands"]:
+            all_commands.extend(self._current["commands"][key]))
+        self._current["commands"]["all"] = list(set(all_commands))
         return self._current
 
     def end(self):
@@ -43,6 +44,13 @@ class tracker:
 
     def register_command(self, type, command_names):
         """call during plugin init to register commands"""
+        if not isinstance(command_names, list):
+            command_names = [command_names]
+
+        #init new type
+        if type not in self._current["commands"].keys():
+            self._current["commands"][type] = []
+
         self._current["commands"][type].extend(command_names)
         self._current["commands"][type] = list(set(self._current["commands"][type]))
 
@@ -59,14 +67,18 @@ tracking = tracker()
 
 def register_user_command(command_names):
     """user command registration"""
-    if not isinstance(command_names, list):
-        command_names = [command_names]
     tracking.register_command("user", command_names)
 
+def register_mod_command(command_names):
+    """mod command registration"""
+    tracking.register_command("mod", command_names)
+
+def register_cast_command(command_names):
+    """cast command registration"""
+    tracking.register_command("cast", command_names)
+
 def register_admin_command(command_names):
-    """admin command registration, overrides user command registration"""
-    if not isinstance(command_names, list):
-        command_names = [command_names]
+    """admin command registration, overrides user/mod/cast command registration"""
     tracking.register_command("admin", command_names)
 
 def register_handler(function, type="message", priority=50):
@@ -172,6 +184,7 @@ def load(bot, command_dispatcher):
         combination of decorators and register_user_command/register_admin_command is used since
         decorators execute immediately upon import
         """
+        #TODO: Handle case of several roles
         plugin_tracking = tracking.current()
         explicit_admin_commands = plugin_tracking["commands"]["admin"]
         all_commands = plugin_tracking["commands"]["all"]

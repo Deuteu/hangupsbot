@@ -76,11 +76,69 @@ class EventHandler:
                 yield from self.run_pluggable_omnibus("message", self.bot, event, command)
                 yield from self.handle_command(event)
 
+    def check_rights(self, event, cmd):
+        """Check if user can run command
+        Priority check :
+            1. Admin only config
+            2. Whitelist role config
+            3. Admin only in code
+            4. Whitelist role in code
+        """
+
+        #1
+        #TODO:
+        #Before 'commands_admin' could be retrieve from local def.
+        #Is that justified given that admin are global?
+        #cf code part
+        config_commands_admin = bot.get_config_option('commands_admin') or []
+        if config_commands_admin and cmd in config_commands_admin:
+            return False
+
+        #2
+        # Simple user
+        config_commands_user = bot.get_config_suboption(event.conv_id, "commands_user") or []
+        if config_commands_user and cmd in config_commands_user:
+            return True
+        # Other roles
+        config_roles = self.bot.get_config_option("roles") or []
+        for role in list(config_roles.keys()):
+            if event.user_id.chat_id in config_roles[role]:
+                #TODO:
+                #Retrieve local commands_role
+                #But override global one or in addtion?
+                #cf code part
+                config_commands_role = bot.get_config_suboption(event.conv_id, "commands_"+role) or []
+                if config_commands_role and cmd in config_commands_role:
+                    return True
+
+        #3
+        #TODO:
+        #Here in addition to locale admin command in config
+        code_commands_admin = command.get_role_commands("admin")
+        if code_commands_admin and cmd in code_commands_admin:
+            return False
+
+        #4
+        code_commands_user = command.get_role_commands("user")
+        if code_commands_user and cmd in code_commands_user:
+            return True
+        config_roles = self.bot.get_config_option("roles") or []
+        for role in list(config_roles.keys()):
+            if event.user_id.chat_id in config_roles[role]:
+                #TODO:
+                #Not coherent behavour
+                #Here in addition to locale role command in config
+                config_commands_role = command.get_role_commands(role)
+                if config_commands_role and cmd in config_commands_role:
+                    return True
+
+        return False
+
     @asyncio.coroutine
     def handle_command(self, event):
         """Handle command messages"""
 
-        # verify user is an admin
+        # Verify user is an admin
         admins_list = self.bot.get_config_suboption(event.conv_id, 'admins')
         initiator_is_admin = False
         if event.user_id.chat_id in admins_list:
@@ -93,7 +151,7 @@ class EventHandler:
                 return
 
         if not isinstance(self.bot_command, list):
-            # always a list
+            # Always a list
             self.bot_command = [self.bot_command]
 
         if not event.text.split()[0].lower() in self.bot_command:
@@ -108,10 +166,10 @@ class EventHandler:
             self.bot.send_message(event.conv, _('{}: missing parameter(s)').format(event.user.full_name))
             return
 
-        # only admins can run admin commands
-        commands_admin_list = command.get_admin_commands(self.bot, event.conv_id)
-        if commands_admin_list and line_args[1].lower() in commands_admin_list:
-            if not initiator_is_admin:
+        # If admin over passed test else check rights
+        if not initiator_is_admin:
+            cmd = line_args[1].lower()
+            if not check_rights(event, cmd):
                 self.bot.send_message(event.conv, _('{}: Can\'t do that.').format(event.user.full_name))
                 return
 

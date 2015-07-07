@@ -13,13 +13,16 @@ class CommandDispatcher(object):
     """Register commands and run them"""
     def __init__(self):
         self.commands = {}
-        self.admin_commands = []
+        #TODO: Replace
+        #self.admin_commands = []
+        self.role_commands = {"admin":[],"user":[]}
         self.unknown_command = None
         self.tracking = None
 
     def set_tracking(self, tracking):
         self.tracking = tracking
 
+    #TODO: Replace
     def get_admin_commands(self, bot, conv_id):
         """Get list of admin-only commands (set by plugins or in config.json)
         list of commands is determined via one of two methods:
@@ -34,8 +37,21 @@ class CommandDispatcher(object):
             admin_command_list = self.commands.keys() - whitelisted_commands
         else:
             commands_admin = bot.get_config_suboption(conv_id, 'commands_admin') or []
-            admin_command_list = commands_admin + self.admin_commands
+            admin_command_list = commands_admin + self.role_commands["admin"]
         return list(set(admin_command_list))
+
+    #TODO: Unsued?
+    def get_roles(self):
+        return list(set(self.roles_commands))
+
+    def get_role_commands(self, role=None):
+        if role == None:
+            return list(set(self.commands.keys()))
+        else:
+            try:
+                return self.roles_commands[role]
+            except KeyError:
+                return []
 
     @asyncio.coroutine
     def run(self, bot, event, *args, **kwds):
@@ -57,18 +73,31 @@ class CommandDispatcher(object):
             print(_("EXCEPTION in {}").format(message))
             logging.exception(message)
 
-    def register(self, *args, admin=False):
+    def register(self, *args, admin=True):
         """Decorator for registering command"""
         def wrapper(func):
             # Automatically wrap command function in coroutine
+            
             func = asyncio.coroutine(func)
-            self.commands[func.__name__] = func
+            name = func.__name__
+            self.commands[name] = func
+            
+            # Backward compatibility
+            role = ""
+            if type(admin) is bool:
+                role = admin ? "admin" : "user"
+            else:
+                role = admin
+            # Register role
+            # Init new role
+            if type not in self.role_commands.keys():
+                self.role_commands[role] = []
+            self.role_commands[type].extend(name)
+            self.role_commands[type] = list(set(self.role_commands[type]))
+            # Sync tracker
             if self.tracking:
-                plugins.tracking.register_command("user", [func.__name__])
-            if admin:
-                self.admin_commands.append(func.__name__)
-                if self.tracking:
-                    plugins.tracking.register_command("admin", [func.__name__])
+                plugins.tracking.register_command(role, [name])
+            
             return func
 
         # If there is one (and only one) positional argument and this argument is callable,
