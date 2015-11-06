@@ -9,20 +9,30 @@ instructions:
 """
 
 import wolframalpha
+import plugins
+import logging
+
+logger = logging.getLogger(__name__)
 
 _internal = {}
 
-def _initialise(Handlers, bot):
+
+def _initialise(bot):
     apikey = bot.get_config_option("wolframalpha-apikey")
     if apikey:
         _internal["client"] = wolframalpha.Client(apikey)
-        Handlers.register_user_command(["ask"])
+        plugins.register_user_command(["ask"])
     else:
-        print(_("WOLFRAMALPHA: config.wolframalpha-apikey required"))
-    return []
+        logger.error('WOLFRAMALPHA: config["wolframalpha-apikey"] required')
+
 
 def ask(bot, event, *args):
     """request data from wolfram alpha"""
+
+    if not len(args):
+        yield from bot.coro_send_message(event.conv,
+                _("You need to ask WolframAlpha a question"))
+        return
 
     keyword = ' '.join(args)
     res = _internal["client"].query(keyword)
@@ -46,4 +56,4 @@ def ask(bot, event, *args):
     if not has_content:
         html = _("<i>Wolfram Alpha did not return any useful data</i>")
 
-    bot.send_html_to_conversation(event.conv, html)
+    yield from bot.coro_send_message(event.conv, html)
